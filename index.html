@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Royalty Router - a music rights math game</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    background: #0e1410;
+    color: #eaf2ec;
+    min-height: 100vh;
+    display: flex; flex-direction: column; align-items: center;
+  }
+  header {
+    width: 100%; max-width: 860px; padding: 16px 20px 8px;
+    display: flex; justify-content: space-between; align-items: baseline; flex-wrap: wrap; gap: 8px;
+  }
+  h1 { font-size: 1.4rem; letter-spacing: 1px; }
+  h1 .accent { color: #2ee6a8; }
+  #hud { font-size: 0.92rem; color: #9cbaa8; display: flex; gap: 16px; flex-wrap: wrap; }
+  #hud b { color: #ffd166; }
+  main { width: 100%; max-width: 860px; padding: 8px 20px 40px; }
+  .panel {
+    background: #14201a; border: 1px solid #26402f; border-radius: 14px; padding: 22px; margin-top: 12px;
+  }
+  #stmt-panel { border-left: 5px solid #2ee6a8; }
+  #stmt-panel h2 { font-size: 1.1rem; margin-bottom: 4px; }
+  #stmt-track { color: #ffd166; }
+  #stmt-total { font-size: 1.8rem; color: #2ee6a8; font-weight: 800; margin: 8px 0 2px; }
+  #stmt-fee { color: #ff9d7a; font-size: 0.9rem; margin-bottom: 4px; }
+  #stmt-source { color: #9cbaa8; font-size: 0.85rem; }
+  table { width: 100%; border-collapse: collapse; margin-top: 14px; }
+  th, td { padding: 9px 10px; text-align: left; font-size: 0.95rem; border-bottom: 1px solid #26402f; }
+  th { color: #9cbaa8; font-weight: 600; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 1px; }
+  td.pct { color: #9cbaa8; width: 90px; }
+  td input {
+    width: 130px; background: #0e1410; color: #eaf2ec; border: 1px solid #2ee6a8;
+    border-radius: 8px; padding: 8px 10px; font-size: 0.95rem; text-align: right;
+  }
+  td input:focus { outline: 2px solid #ffd166; }
+  #allocated-wrap { margin-top: 14px; }
+  #allocated-bar-bg { height: 10px; background: #0e1410; border-radius: 5px; overflow: hidden; border: 1px solid #26402f; }
+  #allocated-bar { height: 100%; width: 0%; background: #2ee6a8; transition: width 0.15s; }
+  #allocated-bar.over { background: #ff5f5f; }
+  #allocated-label { font-size: 0.85rem; color: #9cbaa8; margin-top: 5px; }
+  #msg { margin-top: 10px; font-size: 0.92rem; min-height: 24px; }
+  #msg.bad { color: #ff7a7a; } #msg.ok { color: #57e389; }
+  #timer-label { font-size: 0.85rem; color: #9cbaa8; margin-top: 10px; }
+  button.big {
+    background: linear-gradient(90deg,#2ee6a8,#00b3ff); color: #07281c; border: none;
+    padding: 13px 34px; font-size: 1.05rem; border-radius: 30px; cursor: pointer;
+    margin-top: 16px; font-weight: 800; letter-spacing: 0.5px;
+  }
+  button.big:hover { filter: brightness(1.1); }
+  #start-screen, #end-screen { text-align: center; }
+  #end-screen .rank { font-size: 1.8rem; color: #2ee6a8; margin: 10px 0; }
+  .rules { text-align: left; margin: 14px auto 0; max-width: 560px; font-size: 0.9rem; color: #b8d8c8; line-height: 1.6; }
+  #solution { margin-top: 10px; font-size: 0.88rem; color: #ffd166; display: none; }
+  footer { color: #4a6a58; font-size: 0.75rem; padding: 14px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>💸 ROYALTY <span class="accent">ROUTER</span></h1>
+  <div id="hud">
+    <span>Statement <b id="round">-</b>/8</span>
+    <span>Score <b id="score">0</b></span>
+    <span>Streak <b id="streak">0</b></span>
+  </div>
+</header>
+<main>
+  <div id="start-screen" class="panel">
+    <h2>Every dollar of royalties has a correct destination.</h2>
+    <div class="rules">
+      <p>A payout lands for a track. The contract says who gets what. You type the dollar amounts and hit Distribute. Split it exactly right and the money moves; get it wrong and the statement bounces.</p>
+      <p style="margin-top:8px">Watch for fee lines: when a distributor or society takes a cut, every share is calculated on what remains after the fee. First-try splits earn the biggest bonus and speed pays extra. Eight statements per shift.</p>
+    </div>
+    <button class="big" id="start-btn">Open the statements</button>
+  </div>
+
+  <div id="game-screen" style="display:none">
+    <div id="stmt-panel" class="panel">
+      <h2>Payout for <span id="stmt-track"></span></h2>
+      <div id="stmt-total"></div>
+      <div id="stmt-fee"></div>
+      <div id="stmt-source"></div>
+      <div id="timer-label"></div>
+    </div>
+    <div class="panel">
+      <table>
+        <thead><tr><th>Stakeholder</th><th>Contract</th><th>Amount ($)</th></tr></thead>
+        <tbody id="rows"></tbody>
+      </table>
+      <div id="allocated-wrap">
+        <div id="allocated-bar-bg"><div id="allocated-bar"></div></div>
+        <div id="allocated-label"></div>
+      </div>
+      <div id="msg"></div>
+      <div id="solution"></div>
+      <button class="big" id="distribute-btn">Distribute</button>
+      <button class="big" id="next-btn" style="display:none">Next statement</button>
+    </div>
+  </div>
+
+  <div id="end-screen" class="panel" style="display:none">
+    <h2>Shift complete</h2>
+    <div class="rank" id="rank"></div>
+    <div class="rules" id="end-detail"></div>
+    <button class="big" onclick="location.reload()">Next shift</button>
+  </div>
+</main>
+<footer>All tracks, artists, labels and payouts are fictional. Built with vanilla HTML/CSS/JS.</footer>
+
+<script>
+const STATEMENTS = [
+  { track:"\u201CMidnight Ramen\u201D by Yuzu Chrome", source:"Streaming payout, Q3", total:10000, fee:null,
+    split:[["Record label",50],["Artist",35],["Publisher",15]] },
+  { track:"\u201CNeon Cassette\u201D by The Paper Lanterns", source:"Sync fee, cola commercial", total:24000, fee:null,
+    split:[["Record label",40],["Artist",30],["Publisher",20],["Producer",10]] },
+  { track:"\u201CBento Box Bounce\u201D by Mochi Beats", source:"Video-game soundtrack buyout", total:6500, fee:null,
+    split:[["Artist",50],["Publisher",25],["Record label",25]] },
+  { track:"\u201CGhost Train Home\u201D by Aoyama Echo", source:"Film placement, minus distributor", total:18000, fee:{name:"Distributor",pct:10},
+    split:[["Record label",45],["Artist",35],["Publisher",20]] },
+  { track:"\u201CTurbo Yuzu\u201D by Shibuya Static", source:"Sports-game license, minus platform", total:42000, fee:{name:"Platform",pct:12},
+    split:[["Artist",40],["Record label",35],["Publisher",15],["Producer",10]] },
+  { track:"\u201CUmbrella Season\u201D by Kasa Pop Orchestra", source:"TV theme residual", total:9750, fee:null,
+    split:[["Artist",55],["Publisher",25],["Record label",20]] },
+  { track:"\u201CFestival of Vending Machines\u201D by Denki Mikan", source:"Public performance, minus society", total:31200, fee:{name:"Collection society",pct:8},
+    split:[["Record label",38],["Artist",32],["Publisher",18],["Producer",12]] },
+  { track:"\u201CStatic Kimono\u201D by DJ Karashi", source:"Compilation license, minus distributor", total:55000, fee:{name:"Distributor",pct:10},
+    split:[["Record label",45],["Artist",25],["Publisher",20],["Producer",10]] }
+];
+
+const TIME_BONUS_WINDOW = 45;
+let roundIdx = 0, score = 0, streak = 0, attempts = 0, startTime = 0, locked = false;
+
+function netOf(s){
+  return s.fee ? s.total * (100 - s.fee.pct) / 100 : s.total;
+}
+function expected(s){
+  const net = netOf(s);
+  return s.split.map(([name,pct]) => ({ name, pct, amt: net * pct / 100 }));
+}
+
+function renderStatement(){
+  const s = STATEMENTS[roundIdx];
+  document.getElementById("round").textContent = (roundIdx+1);
+  document.getElementById("stmt-track").textContent = s.track;
+  document.getElementById("stmt-total").textContent = "$"+s.total.toLocaleString();
+  const net = netOf(s);
+  document.getElementById("stmt-fee").textContent = s.fee
+    ? s.fee.name+" takes "+s.fee.pct+"% off the top \u2192 $"+net.toLocaleString()+" left to split"
+    : "No fees \u2014 the full amount splits by contract";
+  document.getElementById("stmt-source").textContent = "Source: "+s.source;
+  const rows = document.getElementById("rows");
+  rows.innerHTML = "";
+  s.split.forEach(([name,pct],i)=>{
+    const tr = document.createElement("tr");
+    tr.innerHTML = "<td>"+name+"</td><td class='pct'>"+pct+"%</td>";
+    const td = document.createElement("td");
+    const inp = document.createElement("input");
+    inp.type = "number"; inp.min = "0"; inp.step = "0.01"; inp.id = "amt-"+i;
+    inp.placeholder = "0.00";
+    inp.addEventListener("input", updateAllocated);
+    td.appendChild(inp);
+    tr.appendChild(td);
+    rows.appendChild(tr);
+  });
+  document.getElementById("msg").textContent = "";
+  document.getElementById("msg").className = "";
+  document.getElementById("solution").style.display = "none";
+  document.getElementById("distribute-btn").style.display = "inline-block";
+  document.getElementById("next-btn").style.display = "none";
+  document.getElementById("timer-label").textContent = "Speed bonus counts down from "+TIME_BONUS_WINDOW+"s.";
+  attempts = 0; locked = false; startTime = Date.now();
+  updateAllocated();
+  const first = document.getElementById("amt-0");
+  if(first) first.focus();
+}
+
+function entered(){
+  const s = STATEMENTS[roundIdx];
+  return s.split.map((_,i)=>{
+    const v = parseFloat(document.getElementById("amt-"+i).value);
+    return isNaN(v) ? 0 : v;
+  });
+}
+
+function updateAllocated(){
+  const s = STATEMENTS[roundIdx];
+  const net = netOf(s);
+  const sum = entered().reduce((a,b)=>a+b,0);
+  const ratio = Math.min(1.2, sum/net);
+  const bar = document.getElementById("allocated-bar");
+  bar.style.width = Math.min(100, ratio*100)+"%";
+  bar.className = sum > net + 1 ? "over" : "";
+  document.getElementById("allocated-label").textContent =
+    "Allocated $"+Math.round(sum).toLocaleString()+" of $"+Math.round(net).toLocaleString();
+}
+
+function distribute(){
+  if(locked) return;
+  const s = STATEMENTS[roundIdx];
+  const exp = expected(s);
+  const got = entered();
+  attempts++;
+  let allOk = true;
+  for(let i=0;i<exp.length;i++){
+    if(Math.abs(got[i] - exp[i].amt) > 1){ allOk = false; break; }
+  }
+  if(allOk){
+    locked = true;
+    const elapsed = (Date.now() - startTime) / 1000;
+    const timeBonus = Math.max(0, Math.round(TIME_BONUS_WINDOW - elapsed));
+    const attemptPts = attempts === 1 ? 100 : attempts === 2 ? 60 : 30;
+    const gained = attemptPts + timeBonus;
+    score += gained; streak++;
+    document.getElementById("score").textContent = score;
+    document.getElementById("streak").textContent = streak;
+    const msg = document.getElementById("msg");
+    msg.className = "ok";
+    msg.textContent = "Distributed cleanly. +"+attemptPts+" pts, +"+timeBonus+" speed bonus.";
+    document.getElementById("distribute-btn").style.display = "none";
+    const nb = document.getElementById("next-btn");
+    nb.style.display = "inline-block";
+    nb.textContent = (roundIdx === STATEMENTS.length-1) ? "Finish the shift" : "Next statement";
+  } else {
+    streak = 0;
+    document.getElementById("streak").textContent = streak;
+    const msg = document.getElementById("msg");
+    msg.className = "bad";
+    if(attempts >= 3){
+      locked = true;
+      const exp2 = expected(s);
+      document.getElementById("solution").style.display = "block";
+      document.getElementById("solution").textContent =
+        "Correct split: " + exp2.map(e=>e.name+" $"+e.amt.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})).join("  \u00B7  ");
+      msg.textContent = "Statement bounced three times. The answer is shown below. No points this one.";
+      document.getElementById("distribute-btn").style.display = "none";
+      const nb = document.getElementById("next-btn");
+      nb.style.display = "inline-block";
+      nb.textContent = (roundIdx === STATEMENTS.length-1) ? "Finish the shift" : "Next statement";
+    } else {
+      msg.textContent = "Statement bounced ("+attempts+"/3). Check the fee line and the percentages.";
+    }
+  }
+}
+
+function next(){
+  roundIdx++;
+  if(roundIdx >= STATEMENTS.length){ endGame(); } else { renderStatement(); }
+}
+
+function endGame(){
+  document.getElementById("game-screen").style.display = "none";
+  const es = document.getElementById("end-screen");
+  es.style.display = "block";
+  let rank;
+  if(score >= 1000) rank = "🏆 Royalty Auditor";
+  else if(score >= 750) rank = "📊 Rights Manager";
+  else if(score >= 500) rank = "🧾 Catalog Assistant";
+  else rank = "🖇️ Mailroom";
+  document.getElementById("rank").textContent = rank;
+  document.getElementById("end-detail").innerHTML =
+    "<p>Final score: <b style='color:#ffd166'>"+score+"</b></p>" +
+    "<p style='margin-top:8px'>Unmatched royalties pile up when nobody does this math. Somebody always should.</p>";
+}
+
+document.getElementById("start-btn").addEventListener("click", ()=>{
+  document.getElementById("start-screen").style.display = "none";
+  document.getElementById("game-screen").style.display = "block";
+  roundIdx = 0; score = 0; streak = 0;
+  document.getElementById("score").textContent = "0";
+  document.getElementById("streak").textContent = "0";
+  renderStatement();
+});
+document.getElementById("distribute-btn").addEventListener("click", distribute);
+document.getElementById("next-btn").addEventListener("click", next);
+</script>
+</body>
+</html>
